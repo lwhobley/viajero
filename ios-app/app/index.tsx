@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import * as Speech from 'expo-speech';
 import * as Sharing from 'expo-sharing';
-import { course, phrases, scene } from '@/constants/course';
+import { course, phrases, sceneForDay } from '@/constants/course';
 import {
   dueReviews, initialProgress, loadProgress, ProgressState,
-  recordScore, recordWeakSpots, saveProgress, scheduleReview, topWeakSpots, weakSpotNotesFrom,
+  markStudyStep, queuePhraseForReview, recordScore, recordWeakSpots, saveProgress, scheduleReview, topWeakSpots, weakSpotNotesFrom,
 } from '@/lib/progress';
 import { comparePhrase, PhraseComparison } from '@/lib/speechMatch';
 import { buildConversationFeedback, ConversationFeedback } from '@/lib/conversationFeedback';
@@ -25,34 +25,39 @@ export default function HomeScreen() {
   const [tab, setTab] = useState<Tab>('today');
   const [progress, setProgress] = useState<ProgressState>(initialProgress);
   const [reply, setReply] = useState('');
-  const [messages, setMessages] = useState<{ text: string; from: 'server' | 'you'; feedback?: ConversationFeedback; fromVoice?: boolean }[]>([{ text: 'Buenas tardes. ¿Qué le gustaría?', from: 'server' }]);
+  const [messages, setMessages] = useState<{ text: string; from: 'server' | 'you'; feedback?: ConversationFeedback; fromVoice?: boolean }[]>([]);
   const [step, setStep] = useState(0);
   const [conversationMode, setConversationMode] = useState<'scripted' | 'ai'>('scripted');
-  const expectedByStep = [scene[1].es, scene[3].es, scene[5].es];
   const [loaded, setLoaded] = useState(false);
   const [listeningOnly, setListeningOnly] = useState(false);
   const [revealedLines, setRevealedLines] = useState<Set<number>>(new Set());
   const [reviewing, setReviewing] = useState(false);
   const [reviewSessionId, setReviewSessionId] = useState(0);
+  const [storageError, setStorageError] = useState(false);
 
   const day = course[Math.min(progress.currentDay, course.length) - 1];
+  const scene = useMemo(() => sceneForDay(day), [day]);
+  const expectedByStep = [scene[1].es, scene[3].es, scene[5].es];
   const dayPhrases = useMemo(() => phrases.filter((phrase) => phrase.day === day.day), [day.day]);
   const phraseById = useMemo(() => new Map(phrases.map((phrase) => [phrase.id, phrase])), []);
   const done = progress.completedTasks[day.id] ?? 0;
   const due = dueReviews(progress.reviews);
   const aiLevel = Math.min(5, Math.max(1, Math.floor(progress.completedDays.length / 10) + 1));
 
-  useEffect(() => { loadProgress().then((saved) => { setProgress(saved); setLoaded(true); }); }, []);
-  useEffect(() => { if (loaded) saveProgress(progress); }, [progress, loaded]);
+  useEffect(() => {
+    loadProgress()
+      .then((saved) => { setProgress(saved); setLoaded(true); })
+      .catch(() => { setStorageError(true); Alert.alert('Progress unavailable', 'Viajero could not open saved progress. Your existing data has not been overwritten.'); });
+  }, []);
+  useEffect(() => { if (loaded) saveProgress(progress).catch(() => setStorageError(true)); }, [progress, loaded]);
+  useEffect(() => { setMessages([{ text: scene[0].es, from: 'server' }]); setStep(0); }, [day.id]);
 
   const speak = (text: string, slow = false) => Speech.speak(text, { language: 'es-MX', rate: slow ? 0.64 : 0.85 });
 
-  const completeTask = (phraseId?: string, correct = true) => {
+  const completeTask = (stepId: string, phraseId?: string) => {
     setProgress((current) => {
-      const next: ProgressState = { ...current, completedTasks: { ...current.completedTasks, [day.id]: Math.min(6, (current.completedTasks[day.id] ?? 0) + 1) } };
-      if (phraseId) { const existing = current.reviews.find((item) => item.phraseId === phraseId); next.reviews = [...current.reviews.filter((item) => item.phraseId !== phraseId), scheduleReview(existing, phraseId, correct)]; }
-      if (next.completedTasks[day.id] === 6 && !next.completedDays.includes(day.day)) { next.completedDays = [...next.completedDays, day.day]; }
-      return next;
+      const studied = markStudyStep(current, day.id, day.day, stepId);
+      return phraseId ? queuePhraseForReview(studied, phraseId) : studied;
     });
   };
 
@@ -61,15 +66,17 @@ export default function HomeScreen() {
     const expected = expectedByStep[Math.min(step, expectedByStep.length - 1)];
     const comparison = comparePhrase(text, expected);
     const feedback = buildConversationFeedback(text, expected, comparison.score);
-    setMessages((items) => [...items, { text, from: 'you', feedback, fromVoice }]); setReply(''); completeTask();
+    setMessages((items) => [...items, { text, from: 'you', feedback, fromVoice }]); setReply(''); completeTask('conversation');
     setProgress((current) => {
       const scored = fromVoice ? recordScore(current, comparison.score) : current;
       const notes = weakSpotNotesFrom(feedback);
       return notes.length ? recordWeakSpots(scored, notes) : scored;
     });
-    const lower = text.toLowerCase(); let answer = 'Perfecto. ¿Algo más?';
-    if (step === 0) { answer = lower.includes('quis') || lower.includes('quier') ? '¡Muy bien! ¿Para tomar?' : 'Puede decir: “Quisiera los tacos, por favor.”'; setStep(lower.includes('quis') || lower.includes('quier') ? 1 : 0); }
-    else if (step === 1) { answer = 'Perfecto. ¿Algo más?'; setStep(2); } else { answer = '¡Excelente! Has terminado el pedido.'; setStep(0); }
+    const accepted = comparison.score >= 0.55;
+    let answer: string;
+    if (!accepted) answer = `Prueba con: “${expected}”`;
+    else if (step < 2) { answer = scene[(step + 1) * 2].es; setStep(step + 1); }
+    else { answer = '¡Excelente! Has terminado la conversación.'; setStep(0); }
     setTimeout(() => { setMessages((items) => [...items, { text: answer, from: 'server' }]); speak(answer); }, 250);
   };
 
@@ -82,7 +89,8 @@ export default function HomeScreen() {
   const gradeReview = (phraseId: string, correct: boolean) => {
     setProgress((current) => {
       const existing = current.reviews.find((item) => item.phraseId === phraseId);
-      return { ...current, reviews: [...current.reviews.filter((item) => item.phraseId !== phraseId), scheduleReview(existing, phraseId, correct)] };
+      const studied = markStudyStep(current, day.id, day.day, 'review');
+      return { ...studied, reviews: [...studied.reviews.filter((item) => item.phraseId !== phraseId), scheduleReview(existing, phraseId, correct)] };
     });
   };
 
@@ -109,7 +117,8 @@ export default function HomeScreen() {
   };
 
   return <ScrollView contentInsetAdjustmentBehavior="automatic" style={styles.page} contentContainerStyle={styles.content}>
-    <View style={styles.header}><View style={styles.brandRow}><Image source={require('../assets/viajero-logo.png')} style={styles.logo} /><Text style={styles.brand}>Viajero</Text></View><Text style={styles.streak}>🔥 {progress.streak || 1} day streak</Text></View>
+    <View style={styles.header}><View style={styles.brandRow}><Image source={require('../assets/viajero-logo.png')} style={styles.logo} /><Text style={styles.brand}>Viajero</Text></View><Text style={styles.streak}>🔥 {progress.streak} {progress.streak === 1 ? 'day' : 'days'} streak</Text></View>
+    {storageError && <View style={styles.callout}><Text style={styles.copy}>Progress storage is temporarily unavailable. Practice still works, but changes may not be saved.</Text></View>}
 
     {reviewing ? <View style={styles.section}>
       <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Review queue</Text><Pressable onPress={() => setReviewing(false)}><Text style={styles.outlineText}>Done</Text></Pressable></View>
@@ -121,7 +130,7 @@ export default function HomeScreen() {
       {tab === 'today' && <View style={styles.section}><Text style={styles.eyebrow}>YOUR NEXT 30 MINUTES</Text><Text style={styles.sectionTitle}>{day.focus}</Text><Text style={styles.copy}>{day.mission}</Text><View style={styles.card}><Text style={styles.cardTitle}>Today's 2-hour rhythm</Text>{[['20 min', 'Recall yesterday'], ['30 min', 'Learn the scene'], ['30 min', 'Talk back'], ['25 min', 'Listen and shadow'], ['15 min', 'Spaced review']].map(([time, label], index) => <View key={label} style={styles.taskRow}><Text style={styles.time}>{time}</Text><Text style={styles.task}>{label}</Text><Text style={styles.check}>{done > index ? '✓' : '○'}</Text></View>)}</View><Pressable style={styles.darkButton} onPress={() => setTab('practice')}><Text style={styles.darkButtonText}>Start practice →</Text></Pressable><View style={styles.callout}><Text style={styles.eyebrow}>REVIEW QUEUE</Text><Text style={styles.challengeTitle}>{due.length ? `${due.length} phrases are ready to review.` : 'Your review queue is clear.'}</Text><Text style={styles.copy}>Short reviews keep phrases available when you need them in a real conversation.</Text>{due.length > 0 && <Pressable style={styles.darkButton} onPress={startReview}><Text style={styles.darkButtonText}>Start review →</Text></Pressable>}</View></View>}
 
       {tab === 'practice' && <View style={styles.section}>
-        <View style={styles.sectionHeader}><View><Text style={styles.eyebrow}>SCENE · {day.focus.toUpperCase()}</Text><Text style={styles.sectionTitle}>Listen, then speak</Text></View><View style={styles.buttonRow}><Pressable style={styles.outlineButton} onPress={toggleListeningOnly}><Text style={styles.outlineText}>{listeningOnly ? 'Show text' : 'Listening only'}</Text></Pressable><Pressable style={styles.darkButton} onPress={() => scene.forEach((line, index) => setTimeout(() => speak(line.es), index * 1450))}><Text style={styles.darkButtonText}>▶ Play scene</Text></Pressable></View></View>
+        <View style={styles.sectionHeader}><View><Text style={styles.eyebrow}>SCENE · {day.focus.toUpperCase()}</Text><Text style={styles.sectionTitle}>Listen, then speak</Text></View><View style={styles.buttonRow}><Pressable style={styles.outlineButton} onPress={toggleListeningOnly}><Text style={styles.outlineText}>{listeningOnly ? 'Show text' : 'Listening only'}</Text></Pressable><Pressable style={styles.darkButton} onPress={() => { scene.forEach((line, index) => setTimeout(() => speak(line.es), index * 1450)); completeTask('scene'); }}><Text style={styles.darkButtonText}>▶ Play scene</Text></Pressable></View></View>
         <View style={styles.card}>{scene.map((line, index) => <View key={line.es} style={styles.line}>
           <Text style={styles.speaker}>{line.who}</Text>
           {listeningOnly && !revealedLines.has(index) ? <>
@@ -134,10 +143,10 @@ export default function HomeScreen() {
             <Text style={styles.english}>{line.en}</Text>
           </>}
         </View>)}</View>
-        <View style={styles.phraseGrid}>{dayPhrases.map((phrase) => <Pressable key={phrase.id} onPress={() => { speak(phrase.spanish); completeTask(phrase.id); }} style={styles.phrase}><Text style={styles.phraseSound}>🔊</Text><Text style={styles.phraseEs}>{phrase.spanish}</Text><Text style={styles.phraseEn}>{phrase.english}</Text></Pressable>)}</View>
-        <View style={styles.challenge}><Text style={styles.eyebrow}>SAY IT ALOUD</Text><Text style={styles.challengeTitle}>Quisiera los tacos al pastor, por favor.</Text><Text style={styles.copy}>Hear it at two speeds, then say it yourself.</Text><View style={styles.buttonRow}><Pressable style={styles.peachButton} onPress={() => speak('Quisiera los tacos al pastor, por favor.')}><Text style={styles.peachText}>Hear normally</Text></Pressable><Pressable style={styles.outlineButton} onPress={() => { speak('Quisiera los tacos al pastor, por favor.', true); completeTask(); }}><Text style={styles.outlineText}>Hear slowly</Text></Pressable></View>
-          <VoicePractice targetPhrase="Quisiera los tacos al pastor, por favor." onResult={(_transcript, comparison, feedback) => {
-            completeTask();
+        <View style={styles.phraseGrid}>{dayPhrases.map((phrase) => <Pressable key={phrase.id} onPress={() => { speak(phrase.spanish); completeTask('phrases', phrase.id); }} style={styles.phrase}><Text style={styles.phraseSound}>🔊</Text><Text style={styles.phraseEs}>{phrase.spanish}</Text><Text style={styles.phraseEn}>{phrase.english}</Text></Pressable>)}</View>
+        <View style={styles.challenge}><Text style={styles.eyebrow}>SAY IT ALOUD</Text><Text style={styles.challengeTitle}>{dayPhrases[0]?.spanish ?? 'Hola, mucho gusto.'}</Text><Text style={styles.copy}>Hear it at two speeds, then say it yourself.</Text><View style={styles.buttonRow}><Pressable style={styles.peachButton} onPress={() => speak(dayPhrases[0]?.spanish ?? 'Hola, mucho gusto.')}><Text style={styles.peachText}>Hear normally</Text></Pressable><Pressable style={styles.outlineButton} onPress={() => { speak(dayPhrases[0]?.spanish ?? 'Hola, mucho gusto.', true); completeTask('shadowing'); }}><Text style={styles.outlineText}>Hear slowly</Text></Pressable></View>
+          <VoicePractice targetPhrase={dayPhrases[0]?.spanish} onResult={(_transcript, comparison, feedback) => {
+            completeTask('speaking');
             setProgress((current) => {
               const scored = comparison ? recordScore(current, comparison.score) : current;
               const notes = feedback ? weakSpotNotesFrom(feedback) : [];
@@ -148,13 +157,13 @@ export default function HomeScreen() {
       </View>}
 
       {tab === 'conversation' && <View style={styles.section}>
-        <View style={styles.sectionHeader}><View><Text style={styles.eyebrow}>LIVE PRACTICE</Text><Text style={styles.sectionTitle}>Talk to the server</Text></View><Text style={styles.ready}>● Voice ready</Text></View>
+        <View style={styles.sectionHeader}><View><Text style={styles.eyebrow}>LIVE PRACTICE</Text><Text style={styles.sectionTitle}>Guided conversation</Text></View><Text style={styles.ready}>● Voice ready</Text></View>
         <View style={styles.modeRow}>
           <Pressable onPress={() => setConversationMode('scripted')} style={[styles.modeTab, conversationMode === 'scripted' && styles.modeTabActive]}><Text style={[styles.modeTabText, conversationMode === 'scripted' && styles.modeTabTextActive]}>Guided scene</Text></Pressable>
           <Pressable onPress={() => setConversationMode('ai')} style={[styles.modeTab, conversationMode === 'ai' && styles.modeTabActive]}><Text style={[styles.modeTabText, conversationMode === 'ai' && styles.modeTabTextActive]}>AI conversation</Text></Pressable>
         </View>
         {conversationMode === 'scripted' ? <>
-          <View style={styles.conversation}>{messages.map((message, index) => <View key={`${message.text}-${index}`} style={[styles.bubble, message.from === 'you' ? styles.youBubble : styles.serverBubble]}><Text style={styles.bubbleText}>{message.text}</Text><Text style={styles.bubbleLabel}>{message.from === 'you' ? 'TÚ' : 'SERVIDOR'}</Text>{message.feedback && <FeedbackPanel feedback={message.feedback} showConfidence={!!message.fromVoice} />}</View>)}</View>
+          <View style={styles.conversation}>{messages.map((message, index) => <View key={`${message.text}-${index}`} style={[styles.bubble, message.from === 'you' ? styles.youBubble : styles.serverBubble]}><Text style={styles.bubbleText}>{message.text}</Text><Text style={styles.bubbleLabel}>{message.from === 'you' ? 'TÚ' : scene[0].who}</Text>{message.feedback && <FeedbackPanel feedback={message.feedback} showConfidence={!!message.fromVoice} />}</View>)}</View>
           <Text style={styles.helper}>Type an answer or record yourself. The server still speaks back in Spanish.</Text>
           <View style={styles.inputRow}><TextInput value={reply} onChangeText={setReply} onSubmitEditing={() => sendReply()} placeholder="Escribe tu respuesta..." placeholderTextColor="#9a9d94" style={styles.input} /><Pressable onPress={() => sendReply()} style={styles.send}><Text style={styles.sendText}>Send</Text></Pressable></View>
           <VoicePractice onResult={(transcript) => sendReply(transcript, true)} />
@@ -166,7 +175,7 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>{progress.completedDays.length} days completed</Text>
         <Text style={styles.copy}>Each day is a complete travel conversation. Tap any day to revisit it and build listening confidence.</Text>
         <View style={styles.card}><Text style={styles.cardTitle}>Review queue</Text><Text style={styles.copy}>{due.length ? `${due.length} phrases are ready to review.` : 'Nothing due right now — check back later.'}</Text>{due.length > 0 && <Pressable style={styles.darkButton} onPress={startReview}><Text style={styles.darkButtonText}>Start review →</Text></Pressable>}</View>
-        <View style={styles.card}><Text style={styles.cardTitle}>Pronunciation trend</Text><TrendSparkline history={progress.scoreHistory} /></View>
+        <View style={styles.card}><Text style={styles.cardTitle}>Phrase-match trend</Text><TrendSparkline history={progress.scoreHistory} /></View>
         <View style={styles.card}><Text style={styles.cardTitle}>Weak spots</Text><WeakSpotsList weakSpots={topWeakSpots(progress, 6)} /></View>
         <View style={styles.dayGrid}>{course.map((item) => <Pressable key={item.id} onPress={() => selectDay(item.day)} style={[styles.dayCard, day.day === item.day && styles.selectedDay]}><Text style={styles.dayNumber}>{String(item.day).padStart(2, '0')}</Text><Text style={styles.dayTitle}>{item.title}</Text><Text style={styles.dayUnit}>{item.unit}</Text>{progress.completedDays.includes(item.day) && <Text style={styles.complete}>✓ complete</Text>}</Pressable>)}</View>
       </View>}
@@ -178,7 +187,7 @@ export default function HomeScreen() {
         <View style={styles.card}><Text style={styles.cardTitle}>Your practice preferences</Text><Text style={styles.profileLine}>✓ Listening + speaking first</Text><Text style={styles.profileLine}>✓ Repetition with visual phrase cards</Text><Text style={styles.profileLine}>✓ Two hours available each day</Text><Text style={styles.profileLine}>✓ Goal: understand and join everyday conversations</Text></View>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Daily reminder</Text>
-          <Text style={styles.copy}>{progress.reminderEnabled ? 'A reminder fires at 7pm if you have not studied today.' : 'Get a daily nudge so your streak does not lapse.'}</Text>
+          <Text style={styles.copy}>{progress.reminderEnabled ? 'A daily practice reminder is scheduled for 7pm.' : 'Get a daily nudge so your streak does not lapse.'}</Text>
           <Pressable style={styles.outlineButton} onPress={toggleStreakReminder}><Text style={styles.outlineText}>{progress.reminderEnabled ? 'Turn off reminder' : 'Turn on reminder'}</Text></Pressable>
         </View>
         <View style={styles.card}>

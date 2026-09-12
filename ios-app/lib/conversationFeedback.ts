@@ -1,10 +1,10 @@
 import { MATCH_THRESHOLD, normalizePhrase } from './speechMatch';
 
-export type PronunciationConfidence = 'high' | 'medium' | 'low';
+export type PhraseMatchConfidence = 'high' | 'medium' | 'low';
 
 export type ConversationFeedback = {
   score: number;
-  pronunciationConfidence: PronunciationConfidence;
+  phraseMatchConfidence: PhraseMatchConfidence;
   grammar: string[];
   phrasing: string[];
   vocabulary: string[];
@@ -65,7 +65,7 @@ function diffWords(spoken: string[], target: string[]): { missing: string[]; ext
   return { missing, extra };
 }
 
-function confidenceFromScore(score: number, wordCount: number): PronunciationConfidence {
+function confidenceFromScore(score: number, wordCount: number): PhraseMatchConfidence {
   if (wordCount === 0) return 'low';
   if (score >= 0.85) return 'high';
   if (score >= 0.6) return 'medium';
@@ -83,14 +83,14 @@ export function buildConversationFeedback(spoken: string, target: string, score:
 
   const grammar = checkGenderAgreement(spokenWords);
   const phrasing = checkPhrasing(spokenWords);
-  const pronunciationConfidence = confidenceFromScore(score, spokenWords.length);
+  const phraseMatchConfidence = confidenceFromScore(score, spokenWords.length);
 
   let tryAgain: string | undefined;
   if (score < MATCH_THRESHOLD) {
     if (missing.length) tryAgain = `Try again and include ${missing.map((word) => `"${word}"`).join(', ')}.`;
-    else if (pronunciationConfidence === 'low') tryAgain = 'Try again a little slower so the words come through clearly.';
+    else if (phraseMatchConfidence === 'low') tryAgain = 'Try again a little slower so the words come through clearly.';
     else tryAgain = 'Close! Try again and match the word order of the model phrase.';
   }
 
-  return { score, pronunciationConfidence, grammar, phrasing, vocabulary, tryAgain };
+  return { score, phraseMatchConfidence, grammar, phrasing, vocabulary, tryAgain };
 }

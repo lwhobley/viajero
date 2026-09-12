@@ -8,6 +8,7 @@ export type ProgressState = {
   currentDay: number;
   completedDays: number[];
   completedTasks: Record<string, number>;
+  completedSteps: Record<string, string[]>;
   streak: number;
   lastStudyDate?: string;
   reviews: ReviewState[];
@@ -20,6 +21,7 @@ export const initialProgress: ProgressState = {
   currentDay: 1,
   completedDays: [],
   completedTasks: {},
+  completedSteps: {},
   streak: 0,
   reviews: [],
   scoreHistory: [],
@@ -39,17 +41,61 @@ async function ensureTable() {
 }
 
 export async function loadProgress(): Promise<ProgressState> {
-  try {
-    await ensureTable();
-    const db = await getDatabase();
-    const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM app_state WHERE key = ?', KEY);
-    return row?.value ? { ...initialProgress, ...JSON.parse(row.value) } : initialProgress;
-  } catch {
-    return initialProgress;
-  }
+  await ensureTable();
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM app_state WHERE key = ?', KEY);
+  if (!row?.value) return initialProgress;
+  const saved = JSON.parse(row.value) as Partial<ProgressState>;
+  const savedTaskCounts = saved.completedTasks && typeof saved.completedTasks === 'object' ? saved.completedTasks : {};
+  const completedSteps = saved.completedSteps && typeof saved.completedSteps === 'object'
+    ? saved.completedSteps
+    : Object.fromEntries(Object.entries(savedTaskCounts).map(([dayId, count]) => [dayId, Array.from({ length: Math.min(6, count) }, (_, index) => `legacy-${index + 1}`)]));
+  return {
+    ...initialProgress,
+    ...saved,
+    completedDays: Array.isArray(saved.completedDays) ? saved.completedDays : [],
+    completedTasks: savedTaskCounts,
+    completedSteps,
+    reviews: Array.isArray(saved.reviews) ? saved.reviews : [],
+    scoreHistory: Array.isArray(saved.scoreHistory) ? saved.scoreHistory : [],
+    weakSpots: saved.weakSpots && typeof saved.weakSpots === 'object' ? saved.weakSpots : {},
+  };
 }
 export async function saveProgress(progress: ProgressState) { await ensureTable(); const db = await getDatabase(); await db.runAsync('INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)', KEY, JSON.stringify(progress)); }
-export function todayKey(date = new Date()) { return date.toISOString().slice(0, 10); }
+export function todayKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function markStudyStep(progress: ProgressState, dayId: string, dayNumber: number, stepId: string, now = new Date()): ProgressState {
+  const steps = progress.completedSteps[dayId] ?? [];
+  if (steps.includes(stepId)) return progress;
+  const nextSteps = [...steps, stepId];
+  const today = todayKey(now);
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const streak = progress.lastStudyDate === today
+    ? progress.streak
+    : progress.lastStudyDate === todayKey(yesterday) ? progress.streak + 1 : 1;
+  const completedDays = nextSteps.length >= 6 && !progress.completedDays.includes(dayNumber)
+    ? [...progress.completedDays, dayNumber]
+    : progress.completedDays;
+  return {
+    ...progress,
+    completedSteps: { ...progress.completedSteps, [dayId]: nextSteps },
+    completedTasks: { ...progress.completedTasks, [dayId]: Math.min(6, nextSteps.length) },
+    completedDays,
+    streak,
+    lastStudyDate: today,
+  };
+}
+
+export function queuePhraseForReview(progress: ProgressState, phraseId: string, now = new Date()): ProgressState {
+  if (progress.reviews.some((review) => review.phraseId === phraseId)) return progress;
+  return { ...progress, reviews: [...progress.reviews, { phraseId, dueAt: now.toISOString(), interval: 0, ease: 2.5, correct: 0, attempts: 0 }] };
+}
 
 export function scheduleReview(state: ReviewState | undefined, phraseId: string, correct: boolean, now = new Date()): ReviewState {
   const previous = state ?? { phraseId, dueAt: now.toISOString(), interval: 0, ease: 2.5, correct: 0, attempts: 0 };

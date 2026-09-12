@@ -31,7 +31,7 @@ function colorFor(score: number): string {
 }
 
 export function TrendSparkline({ history }: { history: ScoreEntry[] }) {
-  if (history.length === 0) return <Text style={styles.trendEmpty}>Practice a phrase aloud to start tracking your pronunciation trend.</Text>;
+  if (history.length === 0) return <Text style={styles.trendEmpty}>Practice a phrase aloud to start tracking how closely your transcript matches.</Text>;
   const days = bucketByDay(history);
   return <View style={styles.sparklineRow}>
     {days.map((score, index) => <View key={index} style={styles.sparklineBarTrack}>

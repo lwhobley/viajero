@@ -7,7 +7,7 @@ import { styles } from '@/styles';
 import { FeedbackPanel } from './FeedbackPanel';
 
 export function VoicePractice({ targetPhrase, onResult }: { targetPhrase?: string; onResult: (transcript: string, comparison?: PhraseComparison, feedback?: ConversationFeedback) => void }) {
-  const { status, transcript, start, stop } = useSpeechToText();
+  const { status, transcript, interimTranscript, start, stop } = useSpeechToText();
   const [result, setResult] = useState<PhraseComparison | null>(null);
   const [feedback, setFeedback] = useState<ConversationFeedback | null>(null);
   const wasListening = useRef(false);
@@ -32,7 +32,7 @@ export function VoicePractice({ targetPhrase, onResult }: { targetPhrase?: strin
     status === 'denied' ? 'Microphone or speech access is off. Enable it in iPhone Settings to use voice practice.'
     : status === 'unsupported' ? 'Speech recognition needs a development build — it is not available in Expo Go.'
     : status === 'error' ? 'Could not understand that. Try again.'
-    : status === 'listening' ? 'Listening… say the phrase aloud.'
+    : status === 'listening' ? (interimTranscript ? `Listening… “${interimTranscript}”` : 'Listening… say the phrase aloud.')
     : result ? (result.isMatch ? `¡Muy bien! You said: “${transcript}”` : `Heard: “${transcript}”. Try again to match the phrase.`)
     : transcript ? `You said: “${transcript}”`
     : 'Record yourself saying the phrase in Spanish.';

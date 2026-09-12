@@ -21,7 +21,7 @@ export const styles = StyleSheet.create({
   reviewButtonText: { color: paper, fontWeight: '700' },
   reviewEmpty: { color: muted, textAlign: 'center', paddingVertical: 30 },
 
-  // Pronunciation trend sparkline
+  // Phrase-match trend sparkline
   sparklineRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 44 },
   sparklineBarTrack: { flex: 1, height: 40, justifyContent: 'flex-end', backgroundColor: '#f3f5ed', borderRadius: 3, overflow: 'hidden' },
   sparklineBarFill: { width: '100%', borderRadius: 3 },

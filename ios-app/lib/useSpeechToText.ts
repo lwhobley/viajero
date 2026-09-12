@@ -42,17 +42,21 @@ function useSpeechEvent<E extends keyof SpeechEventPayloads>(event: E, handler: 
 export function useSpeechToText(lang = 'es-MX') {
   const [status, setStatus] = useState<SpeechToTextStatus>(speech ? 'idle' : 'unsupported');
   const [transcript, setTranscript] = useState('');
+  const [interimTranscript, setInterimTranscript] = useState('');
 
   useSpeechEvent('start', () => setStatus('listening'));
   useSpeechEvent('end', () => setStatus((current) => (current === 'listening' ? 'idle' : current)));
   useSpeechEvent('result', (event) => {
     const text = event.results[0]?.transcript;
-    if (text) setTranscript(text);
+    if (!text) return;
+    if (event.isFinal) { setTranscript(text); setInterimTranscript(''); }
+    else setInterimTranscript(text);
   });
   useSpeechEvent('error', (event) => setStatus(event.error === 'not-allowed' ? 'denied' : 'error'));
 
   const start = useCallback(async () => {
     setTranscript('');
+    setInterimTranscript('');
     if (!speech || !speech.ExpoSpeechRecognitionModule.isRecognitionAvailable()) { setStatus('unsupported'); return; }
     const permission = await speech.ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!permission.granted) { setStatus('denied'); return; }
@@ -61,5 +65,5 @@ export function useSpeechToText(lang = 'es-MX') {
 
   const stop = useCallback(() => speech?.ExpoSpeechRecognitionModule.stop(), []);
 
-  return { status, transcript, start, stop };
+  return { status, transcript, interimTranscript, start, stop };
 }
