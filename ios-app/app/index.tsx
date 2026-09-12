@@ -8,9 +8,6 @@ import { comparePhrase, PhraseComparison } from '@/lib/speechMatch';
 import { buildConversationFeedback, ConversationFeedback } from '@/lib/conversationFeedback';
 import { AiChatMessage, sendAiMessage } from '@/lib/aiConversation';
 import { supabaseConfigured } from '@/lib/supabaseClient';
-import { getSession, isRealAccount, signInWithPassword, signOut, signUpWithPassword, subscribeToAuth } from '@/lib/auth';
-import { mergeProgress, pullProgress, pushProgress } from '@/lib/cloudSync';
-import type { Session } from '@supabase/supabase-js';
 
 type Tab = 'today' | 'practice' | 'conversation' | 'progress' | 'profile';
 const ink = '#173f35'; const muted = '#6e756f'; const cream = '#f7f4ec'; const paper = '#fffdf7'; const peach = '#f1a184';
@@ -109,49 +106,6 @@ function AiConversation({ scenario, level }: { scenario: string; level: number }
   </View>;
 }
 
-type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error';
-
-function AccountPanel({ session, syncStatus }: { session: Session | null; syncStatus: SyncStatus }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
-  const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const loggedIn = isRealAccount(session?.user);
-
-  const submit = async () => {
-    if (!email.trim() || !password) { setMessage('Enter an email and password.'); return; }
-    setBusy(true); setMessage(null);
-    const result = mode === 'signup' ? await signUpWithPassword(email.trim(), password) : await signInWithPassword(email.trim(), password);
-    setBusy(false);
-    if (result.error) setMessage(result.error);
-    else if (mode === 'signup') setMessage('Check your email to confirm your account, then sign in.');
-  };
-
-  if (!supabaseConfigured) return null;
-
-  if (loggedIn) {
-    return <View style={styles.card}>
-      <Text style={styles.cardTitle}>Signed in</Text>
-      <Text style={styles.profileLine}>{session?.user.email}</Text>
-      <Text style={styles.helper}>{syncStatus === 'syncing' ? 'Syncing progress…' : syncStatus === 'error' ? 'Could not sync — check your connection.' : 'Progress syncs automatically across your devices.'}</Text>
-      <Pressable style={styles.outlineButton} onPress={() => signOut()}><Text style={styles.outlineText}>Sign out</Text></Pressable>
-    </View>;
-  }
-
-  return <View style={styles.card}>
-    <Text style={styles.cardTitle}>Sync across devices</Text>
-    <Text style={styles.copy}>Sign in to back up your progress and pick up where you left off on another device. This is optional — the app keeps working fully offline without an account.</Text>
-    <TextInput value={email} onChangeText={setEmail} placeholder="Email" placeholderTextColor="#9a9d94" autoCapitalize="none" keyboardType="email-address" style={styles.input} />
-    <TextInput value={password} onChangeText={setPassword} placeholder="Password" placeholderTextColor="#9a9d94" secureTextEntry style={styles.input} />
-    {message && <Text style={styles.feedbackTryAgain}>{message}</Text>}
-    <View style={styles.buttonRow}>
-      <Pressable style={styles.peachButton} disabled={busy} onPress={submit}><Text style={styles.peachText}>{busy ? 'Please wait…' : mode === 'signup' ? 'Create account' : 'Sign in'}</Text></Pressable>
-      <Pressable style={styles.outlineButton} onPress={() => { setMode(mode === 'signup' ? 'signin' : 'signup'); setMessage(null); }}><Text style={styles.outlineText}>{mode === 'signup' ? 'Have an account? Sign in' : 'New? Create account'}</Text></Pressable>
-    </View>
-  </View>;
-}
-
 export default function HomeScreen() {
   const [tab, setTab] = useState<Tab>('today');
   const [progress, setProgress] = useState<ProgressState>(initialProgress);
@@ -161,42 +115,14 @@ export default function HomeScreen() {
   const [conversationMode, setConversationMode] = useState<'scripted' | 'ai'>('scripted');
   const expectedByStep = [scene[1].es, scene[3].es, scene[5].es];
   const [loaded, setLoaded] = useState(false);
-  const [session, setSession] = useState<Session | null>(null);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const day = course[Math.min(progress.currentDay, course.length) - 1];
   const dayPhrases = useMemo(() => phrases.filter((phrase) => phrase.day === day.day), [day.day]);
   const done = progress.completedTasks[day.id] ?? 0;
   const reviewCount = dueReviews(progress.reviews).length;
   const aiLevel = Math.min(5, Math.max(1, Math.floor(progress.completedDays.length / 10) + 1));
-  const syncUserId = isRealAccount(session?.user) ? session!.user.id : null;
 
   useEffect(() => { loadProgress().then((saved) => { setProgress(saved); setLoaded(true); }); }, []);
   useEffect(() => { if (loaded) saveProgress(progress); }, [progress, loaded]);
-
-  useEffect(() => {
-    getSession().then(setSession);
-    return subscribeToAuth(setSession);
-  }, []);
-
-  // On sign-in, merge whatever is in the cloud into local progress once.
-  useEffect(() => {
-    if (!loaded || !syncUserId) return;
-    let cancelled = false;
-    setSyncStatus('syncing');
-    pullProgress(syncUserId)
-      .then((remote) => { if (!cancelled) { if (remote) setProgress((current) => mergeProgress(current, remote)); setSyncStatus('synced'); } })
-      .catch(() => { if (!cancelled) setSyncStatus('error'); });
-    return () => { cancelled = true; };
-  }, [loaded, syncUserId]);
-
-  // Push local changes to the cloud (debounced) whenever signed in.
-  useEffect(() => {
-    if (!loaded || !syncUserId) return;
-    const timeout = setTimeout(() => {
-      pushProgress(syncUserId, progress).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
-    }, 1000);
-    return () => clearTimeout(timeout);
-  }, [progress, loaded, syncUserId]);
 
   const speak = (text: string, slow = false) => Speech.speak(text, { language: 'es-MX', rate: slow ? 0.64 : 0.85 });
   const completeTask = (phraseId?: string, correct = true) => {
@@ -244,7 +170,7 @@ export default function HomeScreen() {
 
     {tab === 'progress' && <View style={styles.section}><Text style={styles.eyebrow}>YOUR 90-DAY PATH</Text><Text style={styles.sectionTitle}>{progress.completedDays.length} days completed</Text><Text style={styles.copy}>Each day is a complete travel conversation. Tap any day to revisit it and build listening confidence.</Text><View style={styles.dayGrid}>{course.map((item) => <Pressable key={item.id} onPress={() => selectDay(item.day)} style={[styles.dayCard, day.day === item.day && styles.selectedDay]}><Text style={styles.dayNumber}>{String(item.day).padStart(2, '0')}</Text><Text style={styles.dayTitle}>{item.title}</Text><Text style={styles.dayUnit}>{item.unit}</Text>{progress.completedDays.includes(item.day) && <Text style={styles.complete}>✓ complete</Text>}</Pressable>)}</View></View>}
 
-    {tab === 'profile' && <View style={styles.section}><Text style={styles.eyebrow}>TRAVELER PROFILE</Text><Text style={styles.sectionTitle}>Spanish for real life</Text><Text style={styles.copy}>Your plan is tuned for Mexico, Costa Rica, and Spain, with restaurants, transportation, hotels, and meeting locals as the core situations.</Text><View style={styles.card}><Text style={styles.cardTitle}>Your practice preferences</Text><Text style={styles.profileLine}>✓ Listening + speaking first</Text><Text style={styles.profileLine}>✓ Repetition with visual phrase cards</Text><Text style={styles.profileLine}>✓ Two hours available each day</Text><Text style={styles.profileLine}>✓ Goal: understand and join everyday conversations</Text></View><AccountPanel session={session} syncStatus={syncStatus} /><Text style={styles.helper}>The app works fully offline. Progress is always stored on this device; signing in is optional and only adds a cloud backup.</Text></View>}
+    {tab === 'profile' && <View style={styles.section}><Text style={styles.eyebrow}>TRAVELER PROFILE</Text><Text style={styles.sectionTitle}>Spanish for real life</Text><Text style={styles.copy}>Your plan is tuned for Mexico, Costa Rica, and Spain, with restaurants, transportation, hotels, and meeting locals as the core situations.</Text><View style={styles.card}><Text style={styles.cardTitle}>Your practice preferences</Text><Text style={styles.profileLine}>✓ Listening + speaking first</Text><Text style={styles.profileLine}>✓ Repetition with visual phrase cards</Text><Text style={styles.profileLine}>✓ Two hours available each day</Text><Text style={styles.profileLine}>✓ Goal: understand and join everyday conversations</Text></View><Text style={styles.helper}>The app works fully offline. Progress is stored on this device; no account is required.</Text></View>}
   </ScrollView>;
 }
 

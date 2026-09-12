@@ -46,32 +46,13 @@ To redeploy the function after editing `supabase/functions/ai-conversation/index
 npx supabase functions deploy ai-conversation --project-ref opklrtrqvaxutjtefcko
 ```
 
-## Account sign-in and cloud sync (Phase 4)
-
-The Profile tab has an optional sign-in card (email + password, via Supabase
-Auth). Progress always lives locally first (SQLite, `lib/progress.ts`) — the
-app is fully offline-capable with no account. Signing in adds a cloud backup:
-
-- On sign-in, the device pulls whatever progress is stored in the
-  `public.user_progress` table and merges it into local progress (union of
-  completed days, max of per-day task counts and streak, most-advanced review
-  state per phrase — see `lib/cloudSync.ts`'s `mergeProgress`). Nothing is
-  ever deleted by a sync, only merged forward.
-- After that, local progress changes are pushed to the cloud (debounced ~1s)
-  as long as a real (non-anonymous) session is active.
-- Row Level Security on `user_progress` restricts every row to
-  `auth.uid() = user_id`, applied via the migration in
-  `supabase/migrations/20260912000000_create_user_progress.sql`.
-
-This reuses the same Supabase project and anonymous-auth session as Phase 3's
-AI conversation mode — an anonymous session doesn't count as "signed in" for
-sync purposes (`lib/auth.ts`'s `isRealAccount`), so AI conversation keeps
-working before and after a real sign-in.
-
-New Supabase account signups require email confirmation by default, so
-`npx supabase secrets set` isn't needed for this — but if you want to test
-sign-up locally without receiving real emails, disable "Confirm email" under
-Authentication → Sign In / Providers → Email in the dashboard.
+This is a single-user, personal app — there's no sign-in or cloud sync.
+Progress lives only in local SQLite (`lib/progress.ts`); the only reason it
+talks to Supabase at all is the anonymous session the AI conversation Edge
+Function requires. (An earlier revision had an optional account/cloud-sync
+feature; it was removed as unnecessary for a single-user app. The unused
+`public.user_progress` table still exists in the Supabase project — drop it
+by hand if you'd rather not keep it around.)
 
 ## Build with EAS
 
