@@ -12,7 +12,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.viajero.spanish",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSSpeechRecognitionUsageDescription": "Allow Viajero to transcribe your spoken Spanish for pronunciation practice.",
+        "NSMicrophoneUsageDescription": "Allow Viajero to access your microphone for speaking practice."
       }
     },
     "plugins": [
@@ -34,16 +36,18 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "bb4a95b3-da57-4baa-8e74-a8f9711df674"
+        "projectId": "a5aabbe6-9ce4-4ba8-a06c-83340955ee3e"
       }
     },
-    "owner": "loungeabilityllc",
+    "owner": "venuewrangler",
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "updates": {
-      "url": "https://u.expo.dev/bb4a95b3-da57-4baa-8e74-a8f9711df674"
-    },
-    "android": {}
+    "android": {
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
+    }
   }
 }
