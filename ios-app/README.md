@@ -8,7 +8,7 @@ This is the native Expo version of the Viajero Spanish course. It now contains a
 2. From this directory, run `npm start`.
 3. Scan the QR code with the iPhone camera or Expo Go.
 
-The app uses the phone's native speech engine for Spanish playback, including slow playback for shadowing. The Talk screen accepts typed replies and speaks the server's response. A small review scheduler and progress model are included; the storage adapter is isolated in `lib/progress.ts` so native durable storage can be swapped in without changing the learning screens. Microphone recording/transcription remains a development-build phase because Expo Go does not provide a speech-recognition service.
+The app uses the phone's native speech engine for Spanish playback, including slow playback for shadowing. Speaking practice uses the phone's native speech recognizer (via `expo-speech-recognition`) to transcribe what you say in Spanish; the "Say it aloud" challenge compares your transcript against the target phrase and shows a match score, and the Talk screen also accepts a spoken reply, transcribing it into the conversation. Speech recognition needs a development build — Expo Go does not provide a speech-recognition service, so voice input shows an "unsupported" message there; typed replies and phrase playback still work in Expo Go. A small review scheduler and progress model are included; the storage adapter is isolated in `lib/progress.ts` so native durable storage can be swapped in without changing the learning screens.
 
 ## Build with EAS
 
