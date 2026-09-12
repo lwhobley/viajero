@@ -8,7 +8,85 @@ This is the native Expo version of the Viajero Spanish course. It now contains a
 2. From this directory, run `npm start`.
 3. Scan the QR code with the iPhone camera or Expo Go.
 
-The app uses the phone's native speech engine for Spanish playback, including slow playback for shadowing. The Talk screen accepts typed replies and speaks the server's response. A small review scheduler and progress model are included; the storage adapter is isolated in `lib/progress.ts` so native durable storage can be swapped in without changing the learning screens. Microphone recording/transcription remains a development-build phase because Expo Go does not provide a speech-recognition service.
+The app uses the phone's native speech engine for Spanish playback, including slow playback for shadowing. Speaking practice uses the phone's native speech recognizer (via `expo-speech-recognition`) to transcribe what you say in Spanish; the "Say it aloud" challenge compares your transcript against the target phrase and shows a match score, and the Talk screen also accepts a spoken reply, transcribing it into the conversation. A small review scheduler and progress model are included; the storage adapter is isolated in `lib/progress.ts` so native durable storage can be swapped in without changing the learning screens.
+
+**Speech recognition needs a development build**, because Expo Go does not bundle
+the native speech-recognition module. That library resolves its native module at
+import time and throws when it is missing, so `lib/useSpeechToText.ts` requires
+it defensively — in Expo Go the app still starts, voice input reports
+"unsupported", and typed replies plus phrase playback work normally. Keep
+`expo-speech-recognition` on the `2.x` line: from `56.0.0` onward its version
+numbers track Expo SDK releases, and this app is on Expo SDK 53. Its
+`peerDependencies` are `expo: "*"`, so npm will happily install a version that
+only breaks once you make a native build.
+
+## AI conversation mode (Phase 3)
+
+The Talk screen has a "Guided scene" mode (the original scripted practice) and an
+"AI conversation" mode, which talks to a real Gemini-backed conversation partner
+through a Supabase Edge Function (`supabase/functions/ai-conversation`). The
+Gemini API key never ships to the device — it lives only as a server-side
+secret on the Edge Function. Conversation difficulty (1-5) is derived from
+`progress.completedDays` on-device and sent with each request so the model's
+system prompt adapts to the learner without the client holding any prompt logic.
+
+The function requires a valid Supabase auth session (`verify_jwt`), but note
+that this is **not** a meaningful barrier on its own: the anon key is public by
+design and anonymous sign-ins are enabled, so anyone with the project URL can
+mint a JWT. The actual protection against someone using the endpoint as a free
+Gemini relay is a per-user daily cap (`DAILY_REQUEST_LIMIT`, currently 200),
+claimed atomically through the `claim_ai_request` Postgres function backed by
+the `ai_usage` table; over the cap the function returns 429. That table has RLS
+on with no policies on purpose — only the Edge Function's service role touches
+it. The cap fails open if the check itself errors, so also set a spend cap on
+the Gemini key as the real backstop.
+
+This is already deployed to the `viajero` Supabase project
+(`opklrtrqvaxutjtefcko`) with `verify_jwt` enabled, and `.env` in this directory
+already points at it (`EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+— both are public, safe-to-commit values, not secrets). The function reads its
+key from the `GEMINI_API_KEY` secret (get one at
+https://aistudio.google.com/apikey), set via the dashboard (Edge Functions →
+Secrets) or the CLI:
+```bash
+npx supabase login
+npx supabase link --project-ref opklrtrqvaxutjtefcko
+npx supabase secrets set GEMINI_API_KEY=...
+```
+One more thing still needs to be done by hand in the Supabase dashboard, since
+it isn't exposed through the tooling used to set this up: **enable anonymous
+sign-ins** — Authentication → Sign In / Providers → "Allow anonymous
+sign-ins". Without it, `supabase.auth.signInAnonymously()` fails and AI
+conversation mode shows a connection error (guided-scene practice is
+unaffected either way).
+
+To redeploy the function after editing `supabase/functions/ai-conversation/index.ts`:
+```bash
+npx supabase functions deploy ai-conversation --project-ref opklrtrqvaxutjtefcko
+```
+
+This is a single-user, personal app — there's no sign-in or cloud sync.
+Progress lives only in local SQLite (`lib/progress.ts`); the only reason it
+talks to Supabase at all is the anonymous session the AI conversation Edge
+Function requires. That anonymous session is persisted (AsyncStorage) so each
+launch reuses the same auth user rather than creating a new permanent one every
+cold start. An earlier revision had an optional account/cloud-sync feature; it
+was removed as unnecessary here, and its `user_progress` table has been dropped.
+
+## Everything since AI conversation mode
+
+A batch of features layered on top of the AI conversation and progress systems above:
+
+- **Streaming AI replies.** `ai-conversation` now proxies Gemini's `streamGenerateContent` SSE endpoint instead of waiting for a full response; the client (`lib/aiConversation.ts`, using `expo/fetch` for a real streaming body) displays and speaks the reply sentence-by-sentence as it arrives (`lib/sentenceSplit.ts`). A reply that comes back truncated or safety-blocked (`finishReason !== 'STOP'`) is rejected rather than shown as if it were complete.
+- **Grammar/phrasing/vocabulary feedback on AI conversation**, not just the scripted "Say it aloud" challenge. A separate Edge Function, `ai-feedback`, critiques the learner's last message using Gemini's structured JSON output and runs in the background after each turn (streaming and structured output don't mix in one call, hence the split). Notes feed into the weak-spots tracker below.
+- **AI conversation history persists per day** in SQLite (`lib/aiHistory.ts`) and reloads when you return to that day's scenario.
+- **Spaced-repetition review flow.** The "Start review" button (Today and Progress tabs) drills exactly the phrases `dueReviews()` already tracked but had no UI for — reveal, then grade yourself, which reschedules via the existing `scheduleReview` logic.
+- **Pronunciation trend and weak spots** (Progress tab). Every scored recording is appended to `progress.scoreHistory`; a 14-day sparkline (`components/TrendSparkline.tsx`) buckets it by day. Every grammar/phrasing/vocabulary note (from scripted practice or AI conversation) increments a counter in `progress.weakSpots`, surfaced as a ranked list.
+- **Listening-only mode** (Practice tab): scene lines are hidden until you tap Reveal, for real listening comprehension practice instead of reading along.
+- **Flashcard export** (Profile tab): the full course vocabulary plus your weak spots, written as a tab-separated `.txt` file and handed to the OS share sheet — Anki's built-in text importer reads that format directly, no `.apkg` packaging needed.
+- **Daily streak reminder** (Profile tab, optional): a local notification via `expo-notifications`, no server involved.
+
+All of this shares one SQLite connection now (`lib/db.ts`) — `progress.ts` and `aiHistory.ts` used to each open their own, which risked "database is locked" errors from two connections writing the same file.
 
 ## Build with EAS
 
