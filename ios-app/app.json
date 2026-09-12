@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Viajero",
+    "slug": "viajero-spanish",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "viajero",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/viajero-logo.png",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.viajero.spanish",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Viajero to access your microphone for speaking practice."
+        }
+      ],
+      "expo-asset"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bb4a95b3-da57-4baa-8e74-a8f9711df674"
+      }
+    },
+    "owner": "loungeabilityllc",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/bb4a95b3-da57-4baa-8e74-a8f9711df674"
+    },
+    "android": {}
+  }
+}

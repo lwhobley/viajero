@@ -1,0 +1,32 @@
+{
+  "name": "viajero-ios",
+  "version": "1.0.0",
+  "private": true,
+  "main": "App.tsx",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo start --ios",
+    "typecheck": "tsc --noEmit",
+    "eas:configure": "npx eas-cli@latest init",
+    "eas:preview": "npx eas-cli@latest build --platform ios --profile preview",
+    "eas:production": "npx eas-cli@latest build --platform ios --profile production",
+    "eas:submit": "npx eas-cli@latest submit --platform ios --profile production"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^14.1.0",
+    "expo": "^53.0.0",
+    "expo-asset": "~11.1.7",
+    "expo-audio": "~0.4.9",
+    "expo-speech": "^13.1.7",
+    "expo-sqlite": "~15.1.2",
+    "expo-status-bar": "^2.2.3",
+    "expo-updates": "~0.28.18",
+    "react": "19.0.0",
+    "react-native": "0.79.2",
+    "react-native-safe-area-context": "5.4.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.0.10",
+    "typescript": "~5.8.3"
+  }
+}

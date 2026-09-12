@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#173f35" />
+  <title>Viajero — Spanish for real travel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Fraunces:opsz,wght@9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">✦</span><span>Viajero</span></div>
+    <div class="streak"><span>🔥</span><strong id="streakCount">1</strong> day streak</div>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow" id="dayEyebrow">DAY 01 · RESTAURANT SPANISH</p>
+        <h1 id="heroTitle">Order with confidence.</h1>
+        <p class="hero-copy" id="heroCopy">A 2-hour intensive lesson for the moments that make travel feel easy. Listen, repeat, then take the wheel.</p>
+        <div class="progress-wrap"><div class="progress-label"><span>Today's lesson</span><span id="progressText">0 / 6</span></div><div class="progress"><span id="progressBar"></span></div></div>
+      </div>
+      <div class="hero-art" aria-hidden="true"><div class="sun"></div><div class="plate">🍽️</div><div class="cactus">🌵</div></div>
+    </section>
+
+    <nav class="tabs" aria-label="Lesson sections">
+      <button class="tab active" data-view="learn">Learn</button>
+      <button class="tab" data-view="talk">Talk back</button>
+      <button class="tab" data-view="review">Review</button>
+      <button class="tab" data-view="roadmap">30-day roadmap</button>
+    </nav>
+
+    <section id="learnView" class="view active-view">
+      <div class="section-heading"><div><p class="eyebrow" id="sceneEyebrow">SCENE 01</p><h2 id="sceneTitle">At a restaurant</h2></div><button class="sound-btn" id="playScene" title="Play scene aloud">▶ Play scene</button></div>
+      <div class="scene-card" id="sceneCard"></div>
+      <div class="phrase-grid" id="phraseGrid"></div>
+      <div class="challenge-card">
+        <div><p class="eyebrow">QUICK CHALLENGE</p><h3>Build your order</h3><p>Tap the pieces to make a polite sentence.</p></div>
+        <div class="sentence" id="sentence"></div>
+        <div class="choice-row" id="choiceRow"></div>
+        <p class="feedback" id="challengeFeedback" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section id="talkView" class="view">
+      <div class="section-heading"><div><p class="eyebrow">LIVE PRACTICE</p><h2>Talk to the server</h2></div><span class="live-pill"><i></i> Voice ready</span></div>
+      <div class="talk-layout">
+        <div class="conversation" id="conversation" aria-live="polite"></div>
+        <aside class="talk-controls"><div class="server-orb">🧑🏽‍🍳</div><h3>Answer in Spanish</h3><p>Tap the microphone and say your answer. You can also type it below.</p><button id="micBtn" class="mic-btn"><span>🎙</span><span id="micLabel">Start speaking</span></button><div class="input-row"><input id="replyInput" placeholder="Escribe tu respuesta..." autocomplete="off" /><button id="sendBtn" class="send-btn">Send</button></div><p class="support" id="supportText">Your browser's speech recognition will transcribe your answer.</p></aside>
+      </div>
+    </section>
+
+    <section id="reviewView" class="view">
+      <div class="section-heading"><div><p class="eyebrow">RECALL</p><h2>Say it from memory</h2></div><button class="sound-btn" id="playWords">▶ Hear words</button></div>
+      <div class="review-list" id="reviewList"></div>
+      <div class="regional-note"><span>🌎</span><div><strong>A small regional note</strong><p>In Mexico and Costa Rica, <em>la cuenta</em> is the check. In Spain, you'll hear the same phrase, too.</p></div></div>
+    </section>
+
+    <section id="roadmapView" class="view">
+      <div class="section-heading"><div><p class="eyebrow">INTENSIVE COURSE</p><h2>30 days to travel comfortably</h2></div><span class="live-pill"><i></i> 2 hours a day</span></div>
+      <p class="roadmap-intro">This is an intensive travel-fluency sprint. In 30 days you can become conversationally capable for familiar travel situations and build the listening habits that keep improving after the course.</p>
+      <div class="time-blocks"><div><strong>20 min</strong><span>sound + recall</span></div><div><strong>30 min</strong><span>new scene</span></div><div><strong>30 min</strong><span>talk back</span></div><div><strong>25 min</strong><span>listening lab</span></div><div><strong>15 min</strong><span>review</span></div></div>
+      <div class="day-grid" id="dayGrid"></div>
+    </section>
+  </main>
+  <footer><span>Built for your next taco, train, and conversation.</span><div><button id="resetCourseBtn">Reset course</button><button id="resetBtn">Reset lesson</button></div></footer>
+  <script src="app.js"></script>
+</body>
+</html>
