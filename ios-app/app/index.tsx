@@ -28,19 +28,20 @@ function VoicePractice({ targetPhrase, onResult }: { targetPhrase?: string; onRe
   const [result, setResult] = useState<PhraseComparison | null>(null);
   const [feedback, setFeedback] = useState<ConversationFeedback | null>(null);
   const wasListening = useRef(false);
+  const onResultRef = useRef(onResult);
+  onResultRef.current = onResult;
 
+  // Depends on transcript as well as status: the final result event can land
+  // after the end event, and finalizing on status alone would drop it.
   useEffect(() => {
-    if (status === 'listening') { wasListening.current = true; setResult(null); setFeedback(null); }
-    else if (status === 'idle' && wasListening.current) {
-      wasListening.current = false;
-      if (transcript) {
-        const comparison = targetPhrase ? comparePhrase(transcript, targetPhrase) : undefined;
-        setResult(comparison ?? null);
-        setFeedback(targetPhrase && comparison ? buildConversationFeedback(transcript, targetPhrase, comparison.score) : null);
-        onResult(transcript, comparison);
-      }
-    }
-  }, [status]);
+    if (status === 'listening') { wasListening.current = true; setResult(null); setFeedback(null); return; }
+    if (status !== 'idle' || !wasListening.current || !transcript) return;
+    wasListening.current = false;
+    const comparison = targetPhrase ? comparePhrase(transcript, targetPhrase) : undefined;
+    setResult(comparison ?? null);
+    setFeedback(targetPhrase && comparison ? buildConversationFeedback(transcript, targetPhrase, comparison.score) : null);
+    onResultRef.current(transcript, comparison);
+  }, [status, transcript, targetPhrase]);
 
   const toggle = () => (status === 'listening' ? stop() : start());
   const message =
