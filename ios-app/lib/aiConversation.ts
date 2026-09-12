@@ -2,18 +2,13 @@ import { supabase, supabaseConfigured } from './supabaseClient';
 
 export type AiChatMessage = { role: 'user' | 'assistant'; content: string };
 
-let sessionReady: Promise<void> | null = null;
-
-function ensureSession(): Promise<void> {
-  sessionReady ??= (async () => {
-    if (!supabase) throw new Error('supabase_not_configured');
-    const { data } = await supabase.auth.getSession();
-    if (!data.session) {
-      const { error } = await supabase.auth.signInAnonymously();
-      if (error) throw error;
-    }
-  })();
-  return sessionReady;
+async function ensureSession(): Promise<void> {
+  if (!supabase) throw new Error('supabase_not_configured');
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) {
+    const { error } = await supabase.auth.signInAnonymously();
+    if (error) throw error;
+  }
 }
 
 export async function sendAiMessage(messages: AiChatMessage[], scenario: string, level: number): Promise<string> {
