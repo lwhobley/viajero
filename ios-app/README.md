@@ -13,9 +13,9 @@ The app uses the phone's native speech engine for Spanish playback, including sl
 ## AI conversation mode (Phase 3)
 
 The Talk screen has a "Guided scene" mode (the original scripted practice) and an
-"AI conversation" mode, which talks to a real Claude-backed conversation partner
+"AI conversation" mode, which talks to a real Gemini-backed conversation partner
 through a Supabase Edge Function (`supabase/functions/ai-conversation`). The
-Anthropic API key never ships to the device — it lives only as a server-side
+Gemini API key never ships to the device — it lives only as a server-side
 secret on the Edge Function, and the function requires a valid Supabase auth
 session (anonymous sign-in) before it will respond, so it can't be called
 anonymously from outside the app. Conversation difficulty (1-5) is derived from
@@ -25,21 +25,21 @@ system prompt adapts to the learner without the client holding any prompt logic.
 This is already deployed to the `viajero` Supabase project
 (`opklrtrqvaxutjtefcko`) with `verify_jwt` enabled, and `.env` in this directory
 already points at it (`EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-— both are public, safe-to-commit values, not secrets). Two things still need to
-be done by hand in the Supabase dashboard for this project, since neither is
-exposed through the tooling used to set this up:
-
-1. **Set the Anthropic key as a function secret** (never paste it into the repo
-   or into chat with an assistant):
-   ```bash
-   npx supabase login
-   npx supabase link --project-ref opklrtrqvaxutjtefcko
-   npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
-   ```
-2. **Enable anonymous sign-ins**: Supabase dashboard → Authentication →
-   Sign In / Providers → enable "Allow anonymous sign-ins". Without this, the
-   app's `supabase.auth.signInAnonymously()` call fails and AI conversation mode
-   shows a connection error (guided-scene practice is unaffected either way).
+— both are public, safe-to-commit values, not secrets). The function reads its
+key from the `GEMINI_API_KEY` secret (get one at
+https://aistudio.google.com/apikey), set via the dashboard (Edge Functions →
+Secrets) or the CLI:
+```bash
+npx supabase login
+npx supabase link --project-ref opklrtrqvaxutjtefcko
+npx supabase secrets set GEMINI_API_KEY=...
+```
+One more thing still needs to be done by hand in the Supabase dashboard, since
+it isn't exposed through the tooling used to set this up: **enable anonymous
+sign-ins** — Authentication → Sign In / Providers → "Allow anonymous
+sign-ins". Without it, `supabase.auth.signInAnonymously()` fails and AI
+conversation mode shows a connection error (guided-scene practice is
+unaffected either way).
 
 To redeploy the function after editing `supabase/functions/ai-conversation/index.ts`:
 ```bash

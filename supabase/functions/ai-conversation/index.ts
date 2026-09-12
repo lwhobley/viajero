@@ -1,7 +1,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 
-const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-const ANTHROPIC_MODEL = 'claude-sonnet-5';
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+const GEMINI_MODEL = 'gemini-2.5-flash';
 const MAX_HISTORY = 12;
 const MAX_MESSAGE_LENGTH = 500;
 
@@ -38,8 +38,8 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'method_not_allowed' }), { status: 405, headers: { 'content-type': 'application/json' } });
   }
-  if (!ANTHROPIC_API_KEY) {
-    console.error('ANTHROPIC_API_KEY secret is not set');
+  if (!GEMINI_API_KEY) {
+    console.error('GEMINI_API_KEY secret is not set');
     return new Response(JSON.stringify({ error: 'server_misconfigured' }), { status: 500, headers: { 'content-type': 'application/json' } });
   }
 
@@ -59,24 +59,23 @@ Deno.serve(async (req: Request) => {
   const scenario = typeof body.scenario === 'string' && body.scenario.length > 0 ? body.scenario.slice(0, 200) : 'general travel conversation';
   const level = typeof body.level === 'number' && Number.isFinite(body.level) ? body.level : 2;
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
     body: JSON.stringify({
-      model: ANTHROPIC_MODEL,
-      max_tokens: 300,
-      system: buildSystemPrompt(scenario, level),
-      messages: messages.map((message) => ({ role: message.role, content: message.content })),
+      systemInstruction: { parts: [{ text: buildSystemPrompt(scenario, level) }] },
+      contents: messages.map((message) => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] })),
+      generationConfig: { maxOutputTokens: 300 },
     }),
   });
 
   if (!response.ok) {
-    console.error('Anthropic API error', response.status, await response.text());
+    console.error('Gemini API error', response.status, await response.text());
     return new Response(JSON.stringify({ error: 'upstream_error' }), { status: 502, headers: { 'content-type': 'application/json' } });
   }
 
   const data = await response.json();
-  const reply = data.content?.find((block: { type: string }) => block.type === 'text')?.text ?? '';
+  const reply = data.candidates?.[0]?.content?.parts?.find((part: { text?: string }) => typeof part.text === 'string')?.text ?? '';
   if (!reply) {
     return new Response(JSON.stringify({ error: 'empty_reply' }), { status: 502, headers: { 'content-type': 'application/json' } });
   }
