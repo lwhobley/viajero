@@ -110,7 +110,7 @@ Deno.serve(async (req: Request) => {
   const scenario = typeof body.scenario === 'string' && body.scenario.length > 0 ? body.scenario.slice(0, 200) : 'general travel conversation';
   const level = typeof body.level === 'number' && Number.isFinite(body.level) ? body.level : 2;
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+  const upstream = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
     body: JSON.stringify({
@@ -122,28 +122,57 @@ Deno.serve(async (req: Request) => {
     }),
   });
 
-  if (!response.ok) {
-    console.error('Gemini API error', response.status, await response.text());
+  if (!upstream.ok || !upstream.body) {
+    console.error('Gemini stream error', upstream.status, await upstream.text().catch(() => ''));
     return json({ error: 'upstream_error' }, 502);
   }
 
-  const data = await response.json();
-  const candidate = data.candidates?.[0];
-  // Thinking parts are marked with `thought` and are not the reply — returning
-  // one would show the model's reasoning to the learner and speak it aloud.
-  const reply: string = candidate?.content?.parts?.filter((part: { thought?: boolean; text?: string }) => !part.thought && typeof part.text === 'string')
-    .map((part: { text: string }) => part.text)
-    .join('')
-    .trim() ?? '';
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const reader = upstream.body.getReader();
 
-  if (!reply) {
-    console.error('Gemini returned no usable text', candidate?.finishReason, JSON.stringify(data.usageMetadata ?? {}));
-    return json({ error: 'empty_reply' }, 502);
-  }
-  if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
-    console.error('Gemini stopped early', candidate.finishReason, JSON.stringify(data.usageMetadata ?? {}));
-    return json({ error: 'incomplete_reply' }, 502);
-  }
+  // Re-emits a normalized SSE stream to the client: one `data: {"delta": "..."}`
+  // event per usable text chunk (thinking parts are skipped, never forwarded),
+  // then a final `data: {"done": true, "finishReason": "..."}` event.
+  const relay = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let buffer = '';
+      let finishReason: string | undefined;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          // Gemini's SSE stream uses CRLF ("\r\n\r\n") event separators, not "\n\n".
+          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+          let boundary: number;
+          while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+            const rawEvent = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            const dataLine = rawEvent.split('\n').find((line) => line.startsWith('data: '));
+            if (!dataLine) continue;
+            const payload = dataLine.slice(6).trim();
+            if (!payload || payload === '[DONE]') continue;
+            let chunk: { candidates?: Array<{ content?: { parts?: Array<{ thought?: boolean; text?: string }> }; finishReason?: string }> };
+            try { chunk = JSON.parse(payload); } catch { continue; }
+            const candidate = chunk.candidates?.[0];
+            for (const part of candidate?.content?.parts ?? []) {
+              if (part.thought) continue;
+              if (typeof part.text === 'string' && part.text) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: part.text })}\n\n`));
+              }
+            }
+            if (candidate?.finishReason) finishReason = candidate.finishReason;
+          }
+        }
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, finishReason: finishReason ?? 'STOP' })}\n\n`));
+      } catch (error) {
+        console.error('stream relay error', error);
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: 'stream_error' })}\n\n`));
+      } finally {
+        controller.close();
+      }
+    },
+  });
 
-  return json({ reply });
+  return new Response(relay, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' } });
 });

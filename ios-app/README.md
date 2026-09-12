@@ -73,6 +73,21 @@ launch reuses the same auth user rather than creating a new permanent one every
 cold start. An earlier revision had an optional account/cloud-sync feature; it
 was removed as unnecessary here, and its `user_progress` table has been dropped.
 
+## Everything since AI conversation mode
+
+A batch of features layered on top of the AI conversation and progress systems above:
+
+- **Streaming AI replies.** `ai-conversation` now proxies Gemini's `streamGenerateContent` SSE endpoint instead of waiting for a full response; the client (`lib/aiConversation.ts`, using `expo/fetch` for a real streaming body) displays and speaks the reply sentence-by-sentence as it arrives (`lib/sentenceSplit.ts`). A reply that comes back truncated or safety-blocked (`finishReason !== 'STOP'`) is rejected rather than shown as if it were complete.
+- **Grammar/phrasing/vocabulary feedback on AI conversation**, not just the scripted "Say it aloud" challenge. A separate Edge Function, `ai-feedback`, critiques the learner's last message using Gemini's structured JSON output and runs in the background after each turn (streaming and structured output don't mix in one call, hence the split). Notes feed into the weak-spots tracker below.
+- **AI conversation history persists per day** in SQLite (`lib/aiHistory.ts`) and reloads when you return to that day's scenario.
+- **Spaced-repetition review flow.** The "Start review" button (Today and Progress tabs) drills exactly the phrases `dueReviews()` already tracked but had no UI for — reveal, then grade yourself, which reschedules via the existing `scheduleReview` logic.
+- **Pronunciation trend and weak spots** (Progress tab). Every scored recording is appended to `progress.scoreHistory`; a 14-day sparkline (`components/TrendSparkline.tsx`) buckets it by day. Every grammar/phrasing/vocabulary note (from scripted practice or AI conversation) increments a counter in `progress.weakSpots`, surfaced as a ranked list.
+- **Listening-only mode** (Practice tab): scene lines are hidden until you tap Reveal, for real listening comprehension practice instead of reading along.
+- **Flashcard export** (Profile tab): the full course vocabulary plus your weak spots, written as a tab-separated `.txt` file and handed to the OS share sheet — Anki's built-in text importer reads that format directly, no `.apkg` packaging needed.
+- **Daily streak reminder** (Profile tab, optional): a local notification via `expo-notifications`, no server involved.
+
+All of this shares one SQLite connection now (`lib/db.ts`) — `progress.ts` and `aiHistory.ts` used to each open their own, which risked "database is locked" errors from two connections writing the same file.
+
 ## Build with EAS
 
 From this directory, install or use the EAS CLI, then sign in to your Expo account:
